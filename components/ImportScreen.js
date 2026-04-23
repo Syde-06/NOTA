@@ -1,173 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  StatusBar,
-  ScrollView,
-  Alert,
+  View,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase';
+import { useAppContext } from '../contexts/AppContext';
 
 export default function ImportScreen({ navigation }) {
+  const { documents, importDocument, deleteDocument } = useAppContext();
   const [uploading, setUploading] = useState(false);
-  const [recentImports, setRecentImports] = useState([]);
-
-  const loadRecent = useCallback(async () => {
-    const {
-      data: { session },
-    } = supabase.auth.getSession();
-    if (!session) return;
-
-    try {
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/documents?user_id=eq.${session.user.id}&deleted_at=is.null&select=id,name,size,uploaded_at,url,extracted_text&order=uploaded_at.desc&limit=5`,
-        {
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      const data = await res.json();
-      if (res.ok && Array.isArray(data)) {
-        setRecentImports(
-          data.map((d) => ({
-            id: d.id,
-            name: d.name,
-            size: `${Math.round((d.size || 0) / 1024)} KB`,
-            date: new Date(d.uploaded_at).toLocaleDateString(),
-            url: d.url,
-            extracted_text: d.extracted_text ?? null,
-          }))
-        );
-      }
-    } catch (error) {
-      console.log('Load recent failed:', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadRecent();
-  }, [loadRecent]);
-
-  // ─── Text Extraction Helpers ────────────────────────────────────────────────
-
-  const extractTextFromDocx = async (uri) => {
-    try {
-      const response = await fetch(uri);
-      const arrayBuffer = await response.arrayBuffer();
-      const JSZip = (await import('jszip')).default;
-      const zip = await JSZip.loadAsync(arrayBuffer);
-      const xmlFile = zip.file('word/document.xml');
-      if (!xmlFile) return null;
-
-      const xml = await xmlFile.async('string');
-      const paragraphs = [];
-      const paraRegex = /<w:p[ >][\s\S]*?<\/w:p>/g;
-      let paraMatch;
-
-      while ((paraMatch = paraRegex.exec(xml)) !== null) {
-        const paraXml = paraMatch[0];
-        const textMatches = [...paraXml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)];
-        const line = textMatches.map((m) => m[1]).join('');
-        if (line.trim()) paragraphs.push(line.trim());
-      }
-
-      return paragraphs.join('\n\n') || null;
-    } catch (e) {
-      console.log('DOCX extraction error:', e);
-      return null;
-    }
-  };
-
-  const extractTextFromPdf = async (uri) => {
-    try {
-      const response = await fetch(uri);
-      const arrayBuffer = await response.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      const decoder = new TextDecoder('latin1');
-      const raw = decoder.decode(bytes);
-      const chunks = [];
-
-      const btBlocks = raw.matchAll(/BT([\s\S]*?)ET/g);
-      for (const block of btBlocks) {
-        const strings = block[1].matchAll(/\(([^)]{1,300})\)\s*T[jJ]/g);
-        for (const s of strings) {
-          const clean = s[1]
-            .replace(/\\(\d{3})/g, (_, oct) =>
-              String.fromCharCode(parseInt(oct, 8))
-            )
-            .replace(/\\n/g, '\n')
-            .replace(/\\r/g, '')
-            .replace(/\\\\/g, '\\')
-            .replace(/\\'/g, "'")
-            .trim();
-          if (clean.length > 1) chunks.push(clean);
-        }
-      }
-
-      const hexStrings = raw.matchAll(/<([0-9a-fA-F]{4,})>\s*Tj/g);
-      for (const s of hexStrings) {
-        const hex = s[1];
-        let str = '';
-        for (let i = 0; i < hex.length - 1; i += 2) {
-          const code = parseInt(hex.slice(i, i + 2), 16);
-          if (code > 31 && code < 127) str += String.fromCharCode(code);
-        }
-        if (str.trim().length > 1) chunks.push(str.trim());
-      }
-
-      const result = chunks
-        .join(' ')
-        .replace(/\s{3,}/g, '\n\n')
-        .trim();
-      return result.length > 50 ? result : null;
-    } catch (e) {
-      console.log('PDF extraction error:', e);
-      return null;
-    }
-  };
-
-  const extractText = async (uri, mimeType) => {
-    const isDocx =
-      mimeType ===
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      uri.toLowerCase().endsWith('.docx');
-    const isPdf =
-      mimeType === 'application/pdf' || uri.toLowerCase().endsWith('.pdf');
-
-    if (isDocx) return extractTextFromDocx(uri);
-    if (isPdf) return extractTextFromPdf(uri);
-    return null;
-  };
-
-  // ─── Upload Handler ─────────────────────────────────────────────────────────
+  const recentImports = useMemo(() => documents.slice(0, 5), [documents]);
 
   const handlePickDocument = async () => {
-    const {
-      data: { session },
-    } = supabase.auth.getSession();
-
-    if (!session) {
-      Alert.alert('Login Required');
-      navigation.navigate('Login');
-      return;
-    }
-
     try {
       setUploading(true);
-
       const result = await DocumentPicker.getDocumentAsync({
         type: [
           'application/pdf',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         ],
         copyToCacheDirectory: true,
+        multiple: false,
       });
 
       if (result.canceled) {
@@ -176,146 +36,54 @@ export default function ImportScreen({ navigation }) {
       }
 
       const file = result.assets[0];
-
-      if ((file.size ?? file.fileSize) > 50 * 1024 * 1024) {
-        Alert.alert('Error', 'File too large (max 50MB)');
+      if ((file.size ?? file.fileSize ?? 0) > 50 * 1024 * 1024) {
+        Alert.alert('Error', 'File too large. The maximum size is 50MB.');
         setUploading(false);
         return;
       }
 
-      const userId = session.user.id;
-      const fileName = `${userId}/${Date.now()}_${file.name}`;
+      const { doc, warning, error } = await importDocument(file);
 
-      // ── Upload to storage ──
-      const uploadRes = await fetch(
-        `${SUPABASE_URL}/storage/v1/object/documents/${fileName}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: SUPABASE_ANON_KEY,
-            'Content-Type': file.mimeType || 'application/octet-stream',
-            'x-upsert': 'true',
+      if (error) {
+        Alert.alert('Import Failed', error.message);
+        setUploading(false);
+        return;
+      }
+
+      Alert.alert(
+        'Imported',
+        warning || `${file.name} is ready to review and highlight.`,
+        [
+          {
+            text: 'Open',
+            onPress: () => navigation.navigate('HighlightWorkspace', { doc }),
           },
-          body: await fetch(file.uri).then((r) => r.blob()),
-        }
+          { text: 'Done', style: 'cancel' },
+        ]
       );
-
-      if (!uploadRes.ok) {
-        const errorText = await uploadRes.text();
-        console.log('Upload error:', errorText);
-        Alert.alert('Upload Failed', errorText);
-        setUploading(false);
-        return;
-      }
-
-      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/documents/${fileName}`;
-
-      // ── Extract text from local file ──
-      const extracted = await extractText(file.uri, file.mimeType);
-      console.log(
-        'Extracted text length:',
-        extracted ? extracted.length : 'none'
-      );
-
-      // ── Save to DB ──
-      const dbRes = await fetch(`${SUPABASE_URL}/rest/v1/documents`, {
-        method: 'POST',
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation',
-        },
-        body: JSON.stringify({
-          name: file.name,
-          size: file.size ?? file.fileSize ?? 0,
-          url: publicUrl,
-          uploaded_at: new Date().toISOString(),
-          user_id: userId,
-          extracted_text: extracted ?? null,
-        }),
-      });
-
-      const dbData = await dbRes.json();
-      console.log('DB insert response:', dbData);
-
-      if (!dbRes.ok) {
-        Alert.alert('Save Failed', 'Upload succeeded but metadata save failed');
-        setUploading(false);
-        return;
-      }
-
-      await loadRecent();
-
-      Alert.alert('Success!', `${file.name} imported`, [
-        {
-          text: 'Open',
-          onPress: () =>
-            navigation.navigate('HighlightWorkspace', {
-              doc: {
-                title: file.name,
-                url: publicUrl,
-                extracted_text: extracted ?? null,
-              },
-            }),
-        },
-        { text: 'Done', onPress: () => navigation.goBack() },
-      ]);
     } catch (error) {
       console.error('Import failed:', error);
-      Alert.alert('Error', 'Upload failed - please try again');
+      Alert.alert('Error', 'Upload failed. Please try again.');
     } finally {
       setUploading(false);
     }
   };
 
-  // ─── Delete Handler ─────────────────────────────────────────────────────────
-
-  const deleteDocument = async (docId) => {
-    const {
-      data: { session },
-    } = supabase.auth.getSession();
-    if (!session) return;
-
-    Alert.alert(
-      'Delete Document',
-      'Are you sure you want to delete this document?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const res = await fetch(
-              `${SUPABASE_URL}/rest/v1/documents?id=eq.${docId}`,
-              {
-                method: 'PATCH', // Changed from DELETE to PATCH
-                headers: {
-                  apikey: SUPABASE_ANON_KEY,
-                  Authorization: `Bearer ${session.access_token}`,
-                  'Content-Type': 'application/json',
-                },
-                // Added the body to set the deleted_at timestamp
-                body: JSON.stringify({ deleted_at: new Date().toISOString() }),
-              }
-            );
-
-            if (res.ok || res.status === 204) {
-              // Optimistically remove from UI immediately
-              setRecentImports((prev) => prev.filter((d) => d.id !== docId));
-            } else {
-              const err = await res.text();
-              console.log('Delete error:', err);
-              Alert.alert('Error', 'Could not delete document');
-            }
-          },
+  const handleDelete = (docId) => {
+    Alert.alert('Delete Document', 'Remove this document from your library?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await deleteDocument(docId);
+          if (error) {
+            Alert.alert('Error', error.message);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
-
-  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -329,59 +97,68 @@ export default function ImportScreen({ navigation }) {
         <TouchableOpacity
           style={[styles.uploadBtn, uploading && styles.uploadDisabled]}
           onPress={handlePickDocument}
-          disabled={uploading}>
-          <Text style={styles.uploadBtnText}>
-            {uploading ? '⏳ Uploading...' : '📁 Choose File'}
-          </Text>
+          disabled={uploading}
+        >
+          {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.uploadBtnText}>Choose File</Text>}
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Upload Notes</Text>
-          <Text style={styles.infoSub}>PDF or DOCX • Max 50MB</Text>
+        <View style={styles.heroCard}>
+          <Text style={styles.heroEyebrow}>Import notes and readings</Text>
+          <Text style={styles.heroTitle}>Drop in a PDF or DOCX and start structuring instantly.</Text>
+          <Text style={styles.heroSub}>
+            The app extracts text, saves the file locally first, and syncs to the cloud when your account supports it.
+          </Text>
+          <TouchableOpacity style={styles.heroAction} onPress={handlePickDocument} disabled={uploading}>
+            <Text style={styles.heroActionText}>{uploading ? 'Preparing file...' : 'Select a document'}</Text>
+          </TouchableOpacity>
         </View>
 
-        <Text style={styles.sectionTitle}>Recent ({recentImports.length})</Text>
-        {recentImports.length ? (
+        <View style={styles.notesRow}>
+          <View style={styles.noteCard}>
+            <Text style={styles.noteValue}>50MB</Text>
+            <Text style={styles.noteLabel}>Size limit</Text>
+          </View>
+          <View style={styles.noteCard}>
+            <Text style={styles.noteValue}>2</Text>
+            <Text style={styles.noteLabel}>Supported formats</Text>
+          </View>
+          <View style={styles.noteCard}>
+            <Text style={styles.noteValue}>Local</Text>
+            <Text style={styles.noteLabel}>Fallback mode</Text>
+          </View>
+        </View>
+
+        <Text style={styles.sectionTitle}>Recent imports</Text>
+        {recentImports.length > 0 ? (
           recentImports.map((doc) => (
             <View key={doc.id} style={styles.docRow}>
               <TouchableOpacity
                 style={styles.docRowContent}
-                onPress={() =>
-                  navigation.navigate('HighlightWorkspace', {
-                    doc: {
-                      title: doc.name,
-                      url: doc.url,
-                      extracted_text: doc.extracted_text,
-                    },
-                  })
-                }>
+                onPress={() => navigation.navigate('HighlightWorkspace', { doc })}
+              >
                 <View style={styles.docIcon}>
-                  <Text>📄</Text>
+                  <Text style={styles.docIconText}>📄</Text>
                 </View>
                 <View style={styles.docInfo}>
-                  <Text style={styles.docName}>{doc.name}</Text>
+                  <Text style={styles.docName} numberOfLines={1}>{doc.title}</Text>
                   <Text style={styles.docMeta}>
-                    {doc.size} • {doc.date}
+                    {doc.sizeLabel} · {doc.date} · {doc.syncStatus === 'synced' ? 'Cloud synced' : 'Local only'}
                   </Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.deleteBtn}
-                onPress={() => deleteDocument(doc.id)}>
-                <Text style={styles.deleteBtnText}>🗑️</Text>
+              <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(doc.id)}>
+                <Text style={styles.deleteBtnText}>⌫</Text>
               </TouchableOpacity>
             </View>
           ))
         ) : (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>📂</Text>
-            <Text style={styles.emptyTitle}>No documents</Text>
-            <Text style={styles.emptyText}>
-              Choose file above to get started
-            </Text>
+            <Text style={styles.emptyTitle}>No data available</Text>
+            <Text style={styles.emptyText}>Choose a file above to import your first reading.</Text>
           </View>
         )}
       </ScrollView>
@@ -397,55 +174,67 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 14,
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
   },
   cancelText: { fontSize: 17, color: '#007AFF', fontWeight: '600' },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    flex: 1,
-    textAlign: 'center',
-  },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#1C1C1E', flex: 1, textAlign: 'center' },
   uploadBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#1C1C1E',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    minWidth: 120,
+    minWidth: 110,
     alignItems: 'center',
   },
-  uploadDisabled: { backgroundColor: '#C7C7CC' },
+  uploadDisabled: { backgroundColor: '#8E8E93' },
   uploadBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  scroll: { paddingTop: 20 },
-  infoCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
+  scroll: { padding: 20, paddingBottom: 60 },
+  heroCard: {
+    backgroundColor: '#1C1C1E',
+    borderRadius: 22,
     padding: 24,
-    margin: 20,
+    marginBottom: 18,
+  },
+  heroEyebrow: { color: '#9A9AA2', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1.2 },
+  heroTitle: { color: '#fff', fontSize: 24, fontWeight: '800', lineHeight: 31, marginTop: 10 },
+  heroSub: { color: '#C2C2CA', fontSize: 14, lineHeight: 22, marginTop: 12 },
+  heroAction: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 18,
+  },
+  heroActionText: { color: '#1C1C1E', fontSize: 14, fontWeight: '700' },
+  notesRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  noteCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
     shadowRadius: 8,
   },
-  infoTitle: { fontSize: 20, fontWeight: '800', color: '#1C1C1E' },
-  infoSub: { fontSize: 16, color: '#6E6E73', marginTop: 4 },
+  noteValue: { fontSize: 18, fontWeight: '800', color: '#1C1C1E' },
+  noteLabel: { fontSize: 12, color: '#8E8E93', marginTop: 4 },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '700',
     color: '#8E8E93',
-    marginLeft: 20,
-    marginTop: 8,
     marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   docRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
     borderRadius: 16,
-    marginHorizontal: 20,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -453,24 +242,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     overflow: 'hidden',
   },
-  docRowContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  deleteBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: '#FFF2F2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 10,
-    height: 48,
-    width: 48,
-    marginRight: 10,
-  },
-  deleteBtnText: { fontSize: 18 },
+  docRowContent: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 16 },
   docIcon: {
     width: 48,
     height: 48,
@@ -480,16 +252,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 16,
   },
+  docIconText: { fontSize: 22 },
   docInfo: { flex: 1 },
   docName: { fontSize: 16, fontWeight: '600', color: '#1C1C1E' },
-  docMeta: { fontSize: 14, color: '#8E8E93', marginTop: 2 },
+  docMeta: { fontSize: 13, color: '#8E8E93', marginTop: 4 },
   chevron: { fontSize: 20, color: '#C7C7CC' },
+  deleteBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    borderRadius: 10,
+    width: 48,
+    height: 48,
+  },
+  deleteBtnText: { fontSize: 18, color: '#FF3B30' },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
     paddingHorizontal: 40,
+    backgroundColor: '#fff',
+    borderRadius: 18,
   },
   emptyIcon: { fontSize: 56, marginBottom: 20 },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: '#1C1C1E' },
-  emptyText: { fontSize: 16, color: '#8E8E93', textAlign: 'center' },
+  emptyText: { fontSize: 16, color: '#8E8E93', textAlign: 'center', marginTop: 8 },
 });
