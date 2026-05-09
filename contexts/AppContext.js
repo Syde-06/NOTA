@@ -8,6 +8,8 @@ const PROFILE_KEY = '@nota/profile';
 const STATUS_KEY = '@nota/status';
 const ACTIVITY_KEY = '@nota/activity';
 const DOCUMENTS_KEY = '@nota/documents';
+const DARK_MODE_KEY = '@nota/darkMode'; // NEW
+
 const FALLBACK_EMAIL = 'test@example.com';
 const FALLBACK_PASSWORD = '123456';
 
@@ -28,7 +30,6 @@ async function persistSessionBundle({ session, profile, statusMessage, activityF
     AsyncStorage.setItem(STATUS_KEY, statusMessage ?? ''),
     AsyncStorage.setItem(ACTIVITY_KEY, JSON.stringify(activityFeed ?? [])),
   ];
-
   await Promise.all(writes);
 }
 
@@ -44,10 +45,10 @@ export function AppProvider({ children }) {
   const [authLoading, setAuthLoading] = useState(true);
   const [storedDocuments, setStoredDocuments] = useState([]);
   const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [darkMode, setDarkMode] = useState(false); // NEW
 
   useEffect(() => {
     let mounted = true;
-
     const hydrate = async () => {
       try {
         const [
@@ -56,17 +57,17 @@ export function AppProvider({ children }) {
           [, storedStatus],
           [, storedActivity],
           [, storedDocs],
+          [, storedDarkMode], // NEW
         ] = await AsyncStorage.multiGet([
           SESSION_KEY,
           PROFILE_KEY,
           STATUS_KEY,
           ACTIVITY_KEY,
           DOCUMENTS_KEY,
+          DARK_MODE_KEY, // NEW
         ]);
 
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
 
         const parsedSession = storedSession ? JSON.parse(storedSession) : null;
         const parsedProfile = storedProfile ? JSON.parse(storedProfile) : null;
@@ -79,6 +80,7 @@ export function AppProvider({ children }) {
         setStatusMessage(storedStatus || 'Ready to annotate smarter.');
         setActivityFeed(Array.isArray(parsedActivity) ? parsedActivity : []);
         setStoredDocuments(Array.isArray(parsedDocs) ? parsedDocs : []);
+        setDarkMode(storedDarkMode === 'true'); // NEW
       } catch (error) {
         console.log('hydrate app state error:', error);
       } finally {
@@ -88,12 +90,8 @@ export function AppProvider({ children }) {
         }
       }
     };
-
     hydrate();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
@@ -101,6 +99,13 @@ export function AppProvider({ children }) {
       refreshDocuments(session);
     }
   }, [authLoading, session?.user?.id]);
+
+  // NEW: toggle dark mode and persist
+  const toggleDarkMode = async () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    await AsyncStorage.setItem(DARK_MODE_KEY, String(next));
+  };
 
   const persistDocuments = async (nextDocuments) => {
     setStoredDocuments(nextDocuments);
@@ -128,11 +133,9 @@ export function AppProvider({ children }) {
       await persistDocuments([]);
       return [];
     }
-
     if (!activeSession?.access_token) {
       return storedDocuments.filter((item) => item.ownerId === activeSession.user.id);
     }
-
     setDocumentsLoading(true);
     try {
       const res = await fetch(
@@ -144,11 +147,9 @@ export function AppProvider({ children }) {
           },
         }
       );
-
       if (!res.ok) {
         return storedDocuments.filter((item) => item.ownerId === activeSession.user.id);
       }
-
       const rows = await res.json();
       const localOnlyDocs = storedDocuments.filter(
         (item) => item.ownerId === activeSession.user.id && item.source === 'local'
@@ -179,7 +180,6 @@ export function AppProvider({ children }) {
       setProfile(null);
       return null;
     }
-
     if (!activeSession.access_token) {
       const fallbackProfile = {
         id: activeSession.user.id,
@@ -190,14 +190,12 @@ export function AppProvider({ children }) {
       await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(fallbackProfile));
       return fallbackProfile;
     }
-
     try {
       const { data } = await supabase
         .from('profiles')
         .select('full_name, email')
         .eq('id', activeSession.user.id)
         .single();
-
       const nextProfile = {
         id: activeSession.user.id,
         full_name:
@@ -207,7 +205,6 @@ export function AppProvider({ children }) {
           'Nota User',
         email: data?.email || activeSession.user.email || '',
       };
-
       setProfile(nextProfile);
       await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
       return nextProfile;
@@ -233,47 +230,26 @@ export function AppProvider({ children }) {
         email: FALLBACK_EMAIL,
       };
       const nextFeed = [createActivityEntry('Signed in with the demo account.'), ...activityFeed].slice(0, 10);
-
       supabase._session = fallbackSession;
       setSession(fallbackSession);
       setProfile(fallbackProfile);
       setActivityFeed(nextFeed);
-      await persistSessionBundle({
-        session: fallbackSession,
-        profile: fallbackProfile,
-        statusMessage,
-        activityFeed: nextFeed,
-      });
+      await persistSessionBundle({ session: fallbackSession, profile: fallbackProfile, statusMessage, activityFeed: nextFeed });
       await refreshDocuments(fallbackSession);
-
       return { error: null };
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    if (error) {
-      return { error };
-    }
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) return { error };
 
     const nextSession = data?.session || null;
     supabase._session = nextSession;
     setSession(nextSession);
-
     const nextProfile = await refreshProfile(nextSession);
     const nextFeed = [createActivityEntry('Signed in successfully.'), ...activityFeed].slice(0, 10);
     setActivityFeed(nextFeed);
-
-    await persistSessionBundle({
-      session: nextSession,
-      profile: nextProfile,
-      statusMessage,
-      activityFeed: nextFeed,
-    });
+    await persistSessionBundle({ session: nextSession, profile: nextProfile, statusMessage, activityFeed: nextFeed });
     await refreshDocuments(nextSession);
-
     return { error: null };
   };
 
@@ -283,11 +259,7 @@ export function AppProvider({ children }) {
       password,
       options: { data: { full_name: name.trim() } },
     });
-
-    if (error) {
-      return { error };
-    }
-
+    if (error) return { error };
     if (data?.user) {
       await supabase.from('profiles').upsert({
         id: data.user.id,
@@ -296,7 +268,6 @@ export function AppProvider({ children }) {
         created_at: new Date().toISOString(),
       });
     }
-
     return { error: null };
   };
 
@@ -305,35 +276,18 @@ export function AppProvider({ children }) {
     const trimmedStatus = status.trim() || 'Ready to annotate smarter.';
     let nextProfile = profile
       ? { ...profile, full_name: trimmedName }
-      : {
-          id: session?.user?.id,
-          full_name: trimmedName,
-          email: session?.user?.email || '',
-        };
+      : { id: session?.user?.id, full_name: trimmedName, email: session?.user?.email || '' };
 
     if (session?.access_token && session?.user?.id) {
-      const { error } = await supabase
-        .from('profiles')
-        .eq('id', session.user.id)
-        .update({ full_name: trimmedName });
-
-      if (error) {
-        return { error };
-      }
+      const { error } = await supabase.from('profiles').eq('id', session.user.id).update({ full_name: trimmedName });
+      if (error) return { error };
     }
 
     setProfile(nextProfile);
     setStatusMessage(trimmedStatus);
-
     const nextFeed = [createActivityEntry('Updated profile details.'), ...activityFeed].slice(0, 10);
     setActivityFeed(nextFeed);
-    await persistSessionBundle({
-      session,
-      profile: nextProfile,
-      statusMessage: trimmedStatus,
-      activityFeed: nextFeed,
-    });
-
+    await persistSessionBundle({ session, profile: nextProfile, statusMessage: trimmedStatus, activityFeed: nextFeed });
     return { error: null };
   };
 
@@ -350,10 +304,7 @@ export function AppProvider({ children }) {
   };
 
   const importDocument = async (file) => {
-    if (!session?.user?.id) {
-      return { error: { message: 'Please sign in first.' } };
-    }
-
+    if (!session?.user?.id) return { error: { message: 'Please sign in first.' } };
     const extractedText = await extractText(file.uri, file.mimeType);
     const baseDocument = {
       title: file.name,
@@ -367,12 +318,7 @@ export function AppProvider({ children }) {
     };
 
     if (!session?.access_token) {
-      const localDocument = await upsertDocument({
-        ...baseDocument,
-        id: `local-${Date.now()}`,
-        source: 'local',
-        syncStatus: 'local',
-      });
+      const localDocument = await upsertDocument({ ...baseDocument, id: `local-${Date.now()}`, source: 'local', syncStatus: 'local' });
       const nextFeed = [createActivityEntry(`Imported ${file.name} locally.`), ...activityFeed].slice(0, 10);
       await appendActivity(`Imported ${file.name} locally.`, nextFeed);
       return { error: null, doc: localDocument, remoteSaved: false };
@@ -391,10 +337,7 @@ export function AppProvider({ children }) {
         },
         body: fileBlob,
       });
-
-      if (!uploadRes.ok) {
-        throw new Error(await uploadRes.text());
-      }
+      if (!uploadRes.ok) throw new Error(await uploadRes.text());
 
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/documents/${fileName}`;
       const dbRes = await fetch(`${SUPABASE_URL}/rest/v1/documents`, {
@@ -415,11 +358,8 @@ export function AppProvider({ children }) {
           highlights: {},
         }),
       });
-
       const data = await dbRes.json();
-      if (!dbRes.ok) {
-        throw new Error(data?.message || 'Metadata save failed.');
-      }
+      if (!dbRes.ok) throw new Error(data?.message || 'Metadata save failed.');
 
       const remoteDocument = await upsertDocument({
         ...(data[0] || {}),
@@ -436,32 +376,16 @@ export function AppProvider({ children }) {
       return { error: null, doc: remoteDocument, remoteSaved: true };
     } catch (error) {
       console.log('importDocument error:', error);
-      const fallbackDocument = await upsertDocument({
-        ...baseDocument,
-        id: `local-${Date.now()}`,
-        source: 'local',
-        syncStatus: 'local',
-      });
-      const nextFeed = [
-        createActivityEntry(`Imported ${file.name} locally after upload fallback.`),
-        ...activityFeed,
-      ].slice(0, 10);
+      const fallbackDocument = await upsertDocument({ ...baseDocument, id: `local-${Date.now()}`, source: 'local', syncStatus: 'local' });
+      const nextFeed = [createActivityEntry(`Imported ${file.name} locally after upload fallback.`), ...activityFeed].slice(0, 10);
       await appendActivity(`Imported ${file.name} locally after upload fallback.`, nextFeed);
-      return {
-        error: null,
-        doc: fallbackDocument,
-        remoteSaved: false,
-        warning: 'Cloud upload failed, but the file was saved locally on this device.',
-      };
+      return { error: null, doc: fallbackDocument, remoteSaved: false, warning: 'Cloud upload failed, but the file was saved locally on this device.' };
     }
   };
 
   const deleteDocument = async (docId) => {
     const target = storedDocuments.find((item) => item.id === docId);
-    if (!target) {
-      return { error: null };
-    }
-
+    if (!target) return { error: null };
     if (target.source === 'cloud' && session?.access_token) {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/documents?id=eq.${docId}`, {
         method: 'PATCH',
@@ -472,12 +396,8 @@ export function AppProvider({ children }) {
         },
         body: JSON.stringify({ deleted_at: new Date().toISOString() }),
       });
-
-      if (!res.ok && res.status !== 204) {
-        return { error: { message: 'Could not delete document.' } };
-      }
+      if (!res.ok && res.status !== 204) return { error: { message: 'Could not delete document.' } };
     }
-
     const nextDocuments = storedDocuments.filter((item) => item.id !== docId);
     await persistDocuments(nextDocuments);
     await appendActivity(`Removed ${target.title}.`);
@@ -486,10 +406,7 @@ export function AppProvider({ children }) {
 
   const saveDocumentHighlights = async (docId, highlights) => {
     const existing = storedDocuments.find((item) => item.id === docId);
-    if (!existing) {
-      return { error: { message: 'Document not found.' } };
-    }
-
+    if (!existing) return { error: { message: 'Document not found.' } };
     const updated = normalizeDocument({
       ...existing,
       highlights,
@@ -504,9 +421,7 @@ export function AppProvider({ children }) {
       uploaded_at: existing.uploaded_at,
       id: existing.id,
     });
-
     await upsertDocument(updated);
-
     if (existing.source === 'cloud' && session?.access_token) {
       try {
         await fetch(`${SUPABASE_URL}/rest/v1/documents?id=eq.${docId}`, {
@@ -523,7 +438,6 @@ export function AppProvider({ children }) {
         console.log('saveDocumentHighlights remote sync error:', error);
       }
     }
-
     return { error: null, doc: updated };
   };
 
@@ -544,6 +458,8 @@ export function AppProvider({ children }) {
       documentsLoading,
       isAuthenticated: Boolean(session),
       documents,
+      darkMode,       // NEW
+      toggleDarkMode, // NEW
       login,
       signUp,
       logout,
@@ -555,7 +471,7 @@ export function AppProvider({ children }) {
       deleteDocument,
       saveDocumentHighlights,
     }),
-    [session, profile, statusMessage, activityFeed, authLoading, documentsLoading, documents]
+    [session, profile, statusMessage, activityFeed, authLoading, documentsLoading, documents, darkMode]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
@@ -563,10 +479,6 @@ export function AppProvider({ children }) {
 
 export function useAppContext() {
   const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppContext must be used within AppProvider');
-  }
-
+  if (!context) throw new Error('useAppContext must be used within AppProvider');
   return context;
 }

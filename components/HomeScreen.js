@@ -18,14 +18,33 @@ function getInitials(fullName = '') {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '??';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return parts.slice(0, 2).map((part) => part[0].toUpperCase()).join('');
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('');
 }
-
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
   if (hour < 18) return 'Good afternoon';
   return 'Good evening';
+}
+
+function makeColors(dark) {
+  return {
+    bg: dark ? '#1C1C1E' : '#F5F5F7',
+    card: dark ? '#2C2C2E' : '#fff',
+    cardBg: dark ? '#3A3A3C' : '#F2F2F7',
+    text: dark ? '#F5F5F7' : '#1C1C1E',
+    sub: dark ? '#A0A0A8' : '#8E8E93',
+    sub2: dark ? '#8A8A8E' : '#4F4F57',
+    inputBg: dark ? '#2C2C2E' : '#fff',
+    importBtn: dark ? '#F5F5F7' : '#1C1C1E',
+    importBtnText: dark ? '#1C1C1E' : '#fff',
+    statusBar: dark ? 'light-content' : 'dark-content',
+    divider: dark ? '#3A3A3C' : '#E5E5EA',
+    actDot: '#007AFF',
+  };
 }
 
 export default function HomeScreen({ navigation }) {
@@ -38,12 +57,17 @@ export default function HomeScreen({ navigation }) {
     documentsLoading,
     refreshDocuments,
     deleteDocument,
+    darkMode,
   } = useAppContext();
+  const C = makeColors(darkMode);
 
   const userName = profile?.full_name || 'Nota User';
   const userInitials = getInitials(userName);
   const recentDocs = useMemo(
-    () => documents.filter((doc) => doc.title.toLowerCase().includes(search.toLowerCase())).slice(0, 4),
+    () =>
+      documents
+        .filter((doc) => doc.title.toLowerCase().includes(search.toLowerCase()))
+        .slice(0, 4),
     [documents, search]
   );
 
@@ -60,59 +84,92 @@ export default function HomeScreen({ navigation }) {
         style: 'destructive',
         onPress: async () => {
           const { error } = await deleteDocument(docId);
-          if (error) {
-            Alert.alert('Error', error.message);
-          }
+          if (error) Alert.alert('Error', error.message);
         },
       },
     ]);
   };
 
-  const totalHighlights = documents.reduce((sum, doc) => sum + (doc.highlightCount || 0), 0);
+  const totalHighlights = documents.reduce(
+    (sum, doc) => sum + (doc.highlightCount || 0),
+    0
+  );
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={[styles.safe, { backgroundColor: C.bg }]}>
+      <StatusBar barStyle={C.statusBar} />
       <View style={{ height: 25 }} />
-
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>{getGreeting()}</Text>
-          <Text style={styles.headerTitle}>Hi, {userName.split(' ')[0]}</Text>
-          <Text style={styles.statusLine}>{statusMessage}</Text>
+          <Text style={[styles.greeting, { color: C.sub }]}>
+            {getGreeting()}
+          </Text>
+          <Text style={[styles.headerTitle, { color: C.text }]}>
+            Hi, {userName.split(' ')[0]}
+          </Text>
+          <Text style={[styles.statusLine, { color: C.sub2 }]}>
+            {statusMessage}
+          </Text>
         </View>
-        <TouchableOpacity style={styles.avatar} onPress={() => navigation?.navigate('Profile')}>
-          <Text style={styles.avatarText}>{userInitials}</Text>
+        <TouchableOpacity
+          style={[styles.avatar, { backgroundColor: C.importBtn }]}
+          onPress={() => navigation?.navigate('Profile')}>
+          <Text style={[styles.avatarText, { color: C.importBtnText }]}>
+            {userInitials}
+          </Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <View style={styles.searchWrap}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}>
+        <View style={[styles.searchWrap, { backgroundColor: C.card }]}>
           <Text style={styles.searchIcon}>⌕</Text>
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: C.text }]}
             placeholder="Search documents..."
-            placeholderTextColor="#8E8E93"
+            placeholderTextColor={C.sub}
             value={search}
             onChangeText={setSearch}
           />
         </View>
 
-        <TouchableOpacity style={styles.importBtn} onPress={() => navigation?.navigate('Import')}>
-          <Text style={styles.importIcon}>+</Text>
+        <TouchableOpacity
+          style={[styles.importBtn, { backgroundColor: C.importBtn }]}
+          onPress={() => navigation?.navigate('Import')}>
+          <Text style={[styles.importIcon, { color: C.importBtnText }]}>+</Text>
           <View>
-            <Text style={styles.importTitle}>Import Document</Text>
-            <Text style={styles.importSub}>PDF or DOCX, local-first with cloud sync when available</Text>
+            <Text style={[styles.importTitle, { color: C.importBtnText }]}>
+              Import Document
+            </Text>
+            <Text
+              style={[
+                styles.importSub,
+                { color: darkMode ? '#8E8E93' : '#A7A7AE' },
+              ]}>
+              PDF or DOCX, local-first with cloud sync when available
+            </Text>
           </View>
         </TouchableOpacity>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Color Roles</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.legendScroll}>
+          <Text style={[styles.sectionTitle, { color: C.text }]}>
+            Color Roles
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.legendScroll}>
             {ROLE_DEFINITIONS.map((role) => (
-              <View key={role.id} style={styles.legendChip}>
-                <View style={[styles.legendDot, { backgroundColor: role.color }]} />
-                <Text style={styles.legendLabel}>{role.label}</Text>
+              <View
+                key={role.id}
+                style={[styles.legendChip, { backgroundColor: C.card }]}>
+                <View
+                  style={[styles.legendDot, { backgroundColor: role.color }]}
+                />
+                <Text style={[styles.legendLabel, { color: C.text }]}>
+                  {role.label}
+                </Text>
               </View>
             ))}
           </ScrollView>
@@ -120,85 +177,117 @@ export default function HomeScreen({ navigation }) {
 
         <View style={styles.section}>
           <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>Recent</Text>
+            <Text style={[styles.sectionTitle, { color: C.text }]}>Recent</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Documents')}>
               <Text style={styles.seeAll}>See all</Text>
             </TouchableOpacity>
           </View>
 
           {documentsLoading ? (
-            <View style={styles.emptyState}>
-              <ActivityIndicator size="large" color="#1C1C1E" />
-              <Text style={styles.emptySub}>Loading your document library...</Text>
+            <View style={[styles.emptyState, { backgroundColor: C.card }]}>
+              <ActivityIndicator size="large" color={C.text} />
+              <Text style={[styles.emptySub, { color: C.sub }]}>
+                Loading your document library...
+              </Text>
             </View>
           ) : recentDocs.length === 0 ? (
-            <View style={styles.emptyState}>
+            <View style={[styles.emptyState, { backgroundColor: C.card }]}>
               <Text style={styles.emptyIcon}>📂</Text>
-              <Text style={styles.emptyTitle}>No documents</Text>
-              <Text style={styles.emptySub}>Import your first PDF or DOCX to start highlighting.</Text>
+              <Text style={[styles.emptyTitle, { color: C.text }]}>
+                No documents
+              </Text>
+              <Text style={[styles.emptySub, { color: C.sub }]}>
+                Import your first PDF or DOCX to start highlighting.
+              </Text>
             </View>
           ) : (
             recentDocs.map((doc) => (
               <TouchableOpacity
                 key={doc.id}
-                style={styles.docCard}
-                onPress={() => navigation.navigate('HighlightWorkspace', { doc })}
+                style={[styles.docCard, { backgroundColor: C.card }]}
+                onPress={() =>
+                  navigation.navigate('HighlightWorkspace', { doc })
+                }
                 onLongPress={() => confirmDelete(doc.id)}
-                delayLongPress={400}
-              >
-                <View style={styles.docIcon}>
+                delayLongPress={400}>
+                <View style={[styles.docIcon, { backgroundColor: C.cardBg }]}>
                   <Text style={styles.docIconText}>📄</Text>
                 </View>
                 <View style={styles.docInfo}>
-                  <Text style={styles.docTitle} numberOfLines={1}>{doc.title}</Text>
-                  <Text style={styles.docMeta}>
-                    {doc.pages} pages · {doc.highlightCount} highlights · {doc.date}
+                  <Text
+                    style={[styles.docTitle, { color: C.text }]}
+                    numberOfLines={1}>
+                    {doc.title}
                   </Text>
-                  <Text style={styles.syncMeta}>
-                    {doc.syncStatus === 'synced' ? 'Cloud synced' : 'Saved on this device'}
+                  <Text style={[styles.docMeta, { color: C.sub }]}>
+                    {doc.pages} pages · {doc.highlightCount} highlights ·{' '}
+                    {doc.date}
+                  </Text>
+                  <Text style={[styles.syncMeta, { color: C.sub2 }]}>
+                    {doc.syncStatus === 'synced'
+                      ? 'Cloud synced'
+                      : 'Saved on this device'}
                   </Text>
                 </View>
-                <Text style={styles.chevron}>›</Text>
+                <Text style={[styles.chevron, { color: C.sub }]}>›</Text>
               </TouchableOpacity>
             ))
           )}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <Text style={[styles.sectionTitle, { color: C.text }]}>
+            Recent Activity
+          </Text>
           {activityFeed.length === 0 ? (
-            <View style={styles.emptyState}>
+            <View style={[styles.emptyState, { backgroundColor: C.card }]}>
               <Text style={styles.emptyIcon}>🕒</Text>
-              <Text style={styles.emptyTitle}>No data available</Text>
-              <Text style={styles.emptySub}>Your recent actions will appear here.</Text>
+              <Text style={[styles.emptyTitle, { color: C.text }]}>
+                No data available
+              </Text>
+              <Text style={[styles.emptySub, { color: C.sub }]}>
+                Your recent actions will appear here.
+              </Text>
             </View>
           ) : (
             activityFeed.slice(0, 4).map((item) => (
-              <View key={item.id} style={styles.activityCard}>
+              <View
+                key={item.id}
+                style={[styles.activityCard, { backgroundColor: C.card }]}>
                 <View style={styles.activityDot} />
                 <View style={styles.activityBody}>
-                  <Text style={styles.activityText}>{item.message}</Text>
-                  <Text style={styles.activityMeta}>{new Date(item.createdAt).toLocaleString()}</Text>
+                  <Text style={[styles.activityText, { color: C.text }]}>
+                    {item.message}
+                  </Text>
+                  <Text style={[styles.activityMeta, { color: C.sub }]}>
+                    {new Date(item.createdAt).toLocaleString()}
+                  </Text>
                 </View>
               </View>
             ))
           )}
         </View>
 
-        <View style={styles.statsBanner}>
+        <View style={[styles.statsBanner, { backgroundColor: C.card }]}>
           <View style={styles.statItem}>
-            <Text style={styles.statNum}>{documents.length}</Text>
-            <Text style={styles.statLabel}>Docs</Text>
+            <Text style={[styles.statNum, { color: C.text }]}>
+              {documents.length}
+            </Text>
+            <Text style={[styles.statLabel, { color: C.sub }]}>Docs</Text>
           </View>
-          <View style={styles.statDivider} />
+          <View style={[styles.statDivider, { backgroundColor: C.divider }]} />
           <View style={styles.statItem}>
-            <Text style={styles.statNum}>{totalHighlights}</Text>
-            <Text style={styles.statLabel}>Highlights</Text>
+            <Text style={[styles.statNum, { color: C.text }]}>
+              {totalHighlights}
+            </Text>
+            <Text style={[styles.statLabel, { color: C.sub }]}>Highlights</Text>
           </View>
-          <View style={styles.statDivider} />
+          <View style={[styles.statDivider, { backgroundColor: C.divider }]} />
           <View style={styles.statItem}>
-            <Text style={styles.statNum}>{activityFeed.length}</Text>
-            <Text style={styles.statLabel}>Actions</Text>
+            <Text style={[styles.statNum, { color: C.text }]}>
+              {activityFeed.length}
+            </Text>
+            <Text style={[styles.statLabel, { color: C.sub }]}>Actions</Text>
           </View>
         </View>
 
@@ -209,7 +298,7 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F5F5F7' },
+  safe: { flex: 1 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -217,23 +306,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
   },
-  greeting: { fontSize: 13, color: '#8E8E93' },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#1C1C1E', marginTop: 2 },
-  statusLine: { fontSize: 13, color: '#6A6A73', marginTop: 4 },
+  greeting: { fontSize: 13 },
+  headerTitle: { fontSize: 24, fontWeight: '800', marginTop: 2 },
+  statusLine: { fontSize: 13, marginTop: 4 },
   avatar: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#1C1C1E',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  avatarText: { fontWeight: '700', fontSize: 14 },
   scroll: { paddingHorizontal: 20 },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -244,19 +331,18 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   searchIcon: { fontSize: 16, marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 16, color: '#1C1C1E' },
+  searchInput: { flex: 1, fontSize: 16 },
   importBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C1E',
     borderRadius: 16,
     padding: 18,
     marginBottom: 20,
     gap: 14,
   },
-  importIcon: { color: '#fff', fontSize: 28, fontWeight: '300', lineHeight: 34 },
-  importTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  importSub: { color: '#A7A7AE', fontSize: 12, marginTop: 2, maxWidth: 250 },
+  importIcon: { fontSize: 28, fontWeight: '300', lineHeight: 34 },
+  importTitle: { fontSize: 16, fontWeight: '700' },
+  importSub: { fontSize: 12, marginTop: 2, maxWidth: 250 },
   section: { marginBottom: 20 },
   sectionRow: {
     flexDirection: 'row',
@@ -264,13 +350,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#1C1C1E', marginBottom: 12 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', marginBottom: 12 },
   seeAll: { color: '#007AFF', fontSize: 14 },
   legendScroll: { marginHorizontal: -4 },
   legendChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -282,11 +367,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendLabel: { fontSize: 13, fontWeight: '600', color: '#1C1C1E' },
+  legendLabel: { fontSize: 13, fontWeight: '600' },
   docCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
     marginBottom: 10,
@@ -299,21 +383,19 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: '#F2F2F7',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
   },
   docIconText: { fontSize: 22 },
   docInfo: { flex: 1 },
-  docTitle: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
-  docMeta: { fontSize: 12, color: '#8E8E93', marginTop: 3 },
-  syncMeta: { fontSize: 12, color: '#4F4F57', marginTop: 4 },
-  chevron: { fontSize: 22, color: '#C7C7CC', marginLeft: 8 },
+  docTitle: { fontSize: 15, fontWeight: '700' },
+  docMeta: { fontSize: 12, marginTop: 3 },
+  syncMeta: { fontSize: 12, marginTop: 4 },
+  chevron: { fontSize: 22, marginLeft: 8 },
   activityCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
     marginBottom: 10,
@@ -323,13 +405,18 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     gap: 12,
   },
-  activityDot: { width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: '#007AFF' },
+  activityDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 6,
+    backgroundColor: '#007AFF',
+  },
   activityBody: { flex: 1 },
-  activityText: { fontSize: 15, fontWeight: '600', color: '#1C1C1E' },
-  activityMeta: { fontSize: 12, color: '#8E8E93', marginTop: 4 },
+  activityText: { fontSize: 15, fontWeight: '600' },
+  activityMeta: { fontSize: 12, marginTop: 4 },
   statsBanner: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
@@ -338,11 +425,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   statItem: { flex: 1, alignItems: 'center' },
-  statNum: { fontSize: 22, fontWeight: '800', color: '#1C1C1E' },
-  statLabel: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
-  statDivider: { width: 1, backgroundColor: '#E5E5EA' },
+  statNum: { fontSize: 22, fontWeight: '800' },
+  statLabel: { fontSize: 12, marginTop: 2 },
+  statDivider: { width: 1 },
   emptyState: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 32,
     alignItems: 'center',
@@ -353,6 +439,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 17, fontWeight: '600', color: '#1C1C1E', marginBottom: 4 },
-  emptySub: { fontSize: 15, color: '#8E8E93', textAlign: 'center' },
+  emptyTitle: { fontSize: 17, fontWeight: '600', marginBottom: 4 },
+  emptySub: { fontSize: 15, textAlign: 'center' },
 });
