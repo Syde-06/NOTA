@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Image,
 } from 'react-native';
 import { useAppContext } from '../contexts/AppContext';
 import { ROLE_DEFINITIONS } from '../utils/documentUtils';
@@ -51,6 +52,7 @@ export default function HomeScreen({ navigation }) {
   const [search, setSearch] = useState('');
   const {
     profile,
+    profilePhoto,
     statusMessage,
     activityFeed,
     documents,
@@ -315,8 +317,10 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  avatarText: { fontWeight: '700', fontSize: 14 },
+  avatarText: { fontWeight: '700', fontSize: 16 },
+  avatarImage: { width: 42, height: 42, borderRadius: 21 },
   scroll: { paddingHorizontal: 20 },
   searchWrap: {
     flexDirection: 'row',

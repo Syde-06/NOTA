@@ -11,7 +11,9 @@ import {
   ActivityIndicator,
   Alert,
   Switch,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useAppContext } from '../contexts/AppContext';
 
 const COLOR_ROLES = [
@@ -51,10 +53,12 @@ function makeColors(dark) {
 export default function ProfileScreen({ navigation }) {
   const {
     profile,
+    profilePhoto,
     statusMessage,
     activityFeed,
     authLoading,
     updateProfile,
+    updateProfilePhoto,
     logout,
     darkMode,
     toggleDarkMode,
@@ -66,6 +70,7 @@ export default function ProfileScreen({ navigation }) {
   const [statusDraft, setStatusDraft] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [photoUri, setPhotoUri] = useState(null);
   const [roleLabels, setRoleLabels] = useState({
     red: 'Title',
     yellow: 'Definition',
@@ -77,7 +82,26 @@ export default function ProfileScreen({ navigation }) {
   useEffect(() => {
     setName(profile?.full_name || '');
     setStatusDraft(statusMessage || '');
-  }, [profile, statusMessage]);
+    setPhotoUri(profilePhoto || null);
+  }, [profile, statusMessage, profilePhoto]);
+
+  const handlePickPhoto = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.log('Photo picker error:', error);
+      Alert.alert('Error', 'Unable to select a photo.');
+    }
+  };
 
   const saveProfile = async () => {
     if (!name.trim()) {
@@ -90,6 +114,10 @@ export default function ProfileScreen({ navigation }) {
     }
     setSaving(true);
     try {
+      if (photoUri !== profilePhoto) {
+        const { error: photoError } = await updateProfilePhoto(photoUri);
+        if (photoError) throw photoError;
+      }
       const { error } = await updateProfile({
         fullName: name,
         status: statusDraft,
@@ -143,10 +171,14 @@ export default function ProfileScreen({ navigation }) {
         {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={[styles.avatar, { backgroundColor: C.avatar }]}>
-            <Text style={styles.avatarText}>{getInitials(name)}</Text>
+            {photoUri ? (
+              <Image source={{ uri: photoUri }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>{getInitials(name)}</Text>
+            )}
           </View>
           {editing && (
-            <TouchableOpacity style={styles.changePhotoBtn}>
+            <TouchableOpacity style={styles.changePhotoBtn} onPress={handlePickPhoto}>
               <Text style={styles.changePhotoText}>Change Photo</Text>
             </TouchableOpacity>
           )}
@@ -361,8 +393,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
+    overflow: 'hidden',
   },
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 28 },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 43 },
   changePhotoBtn: { marginTop: 4 },
   changePhotoText: { color: '#007AFF', fontSize: 16 },
   profileName: { fontSize: 22, fontWeight: '800' },

@@ -9,6 +9,7 @@ const STATUS_KEY = '@nota/status';
 const ACTIVITY_KEY = '@nota/activity';
 const DOCUMENTS_KEY = '@nota/documents';
 const DARK_MODE_KEY = '@nota/darkMode'; // NEW
+const PROFILE_PHOTO_KEY = '@nota/profilePhoto';
 
 const FALLBACK_EMAIL = 'test@example.com';
 const FALLBACK_PASSWORD = '123456';
@@ -34,12 +35,13 @@ async function persistSessionBundle({ session, profile, statusMessage, activityF
 }
 
 async function clearSessionBundle() {
-  await AsyncStorage.multiRemove([SESSION_KEY, PROFILE_KEY, STATUS_KEY, ACTIVITY_KEY]);
+  await AsyncStorage.multiRemove([SESSION_KEY, PROFILE_KEY, STATUS_KEY, ACTIVITY_KEY, PROFILE_PHOTO_KEY]);
 }
 
 export function AppProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [profilePhoto, setProfilePhoto] = useState(null);
   const [statusMessage, setStatusMessage] = useState('Ready to annotate smarter.');
   const [activityFeed, setActivityFeed] = useState([]);
   const [authLoading, setAuthLoading] = useState(true);
@@ -58,6 +60,7 @@ export function AppProvider({ children }) {
           [, storedActivity],
           [, storedDocs],
           [, storedDarkMode], // NEW
+          [, storedProfilePhoto],
         ] = await AsyncStorage.multiGet([
           SESSION_KEY,
           PROFILE_KEY,
@@ -65,6 +68,7 @@ export function AppProvider({ children }) {
           ACTIVITY_KEY,
           DOCUMENTS_KEY,
           DARK_MODE_KEY, // NEW
+          PROFILE_PHOTO_KEY,
         ]);
 
         if (!mounted) return;
@@ -77,6 +81,7 @@ export function AppProvider({ children }) {
         supabase._session = parsedSession;
         setSession(parsedSession);
         setProfile(parsedProfile);
+        setProfilePhoto(storedProfilePhoto || null);
         setStatusMessage(storedStatus || 'Ready to annotate smarter.');
         setActivityFeed(Array.isArray(parsedActivity) ? parsedActivity : []);
         setStoredDocuments(Array.isArray(parsedDocs) ? parsedDocs : []);
@@ -105,6 +110,21 @@ export function AppProvider({ children }) {
     const next = !darkMode;
     setDarkMode(next);
     await AsyncStorage.setItem(DARK_MODE_KEY, String(next));
+  };
+
+  const updateProfilePhoto = async (photoUri) => {
+    try {
+      if (photoUri) {
+        await AsyncStorage.setItem(PROFILE_PHOTO_KEY, photoUri);
+      } else {
+        await AsyncStorage.removeItem(PROFILE_PHOTO_KEY);
+      }
+      setProfilePhoto(photoUri);
+      return { error: null };
+    } catch (error) {
+      console.log('updateProfilePhoto error:', error);
+      return { error };
+    }
   };
 
   const persistDocuments = async (nextDocuments) => {
@@ -452,26 +472,28 @@ export function AppProvider({ children }) {
     () => ({
       session,
       profile,
+      profilePhoto,
       statusMessage,
       activityFeed,
       authLoading,
       documentsLoading,
       isAuthenticated: Boolean(session),
       documents,
-      darkMode,       // NEW
-      toggleDarkMode, // NEW
+      darkMode,
+      toggleDarkMode,
       login,
       signUp,
       logout,
       refreshProfile,
       updateProfile,
+      updateProfilePhoto,
       appendActivity,
       refreshDocuments,
       importDocument,
       deleteDocument,
       saveDocumentHighlights,
     }),
-    [session, profile, statusMessage, activityFeed, authLoading, documentsLoading, documents, darkMode]
+    [session, profile, profilePhoto, statusMessage, activityFeed, authLoading, documentsLoading, documents, darkMode]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
